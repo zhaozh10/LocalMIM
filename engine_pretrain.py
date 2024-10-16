@@ -14,10 +14,9 @@
 
 import math
 import sys
-from typing import Iterable
+import torch
 import time
 import datetime
-import torch
 
 import util.misc as misc
 import util.lr_sched as lr_sched
@@ -31,37 +30,37 @@ def train_one_epoch(model, data_loader, optimizer, device, epoch, loss_scaler, l
     print_freq = 50
 
     accum_iter = args.accum_iter
+
     optimizer.zero_grad()
 
+    if log_writer is not None:
+        print('log_dir: {}'.format(log_writer.log_dir))
+
     time_consume = 0.
-    for data_iter_step, (samples, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, samples in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         torch.cuda.synchronize()
         start = time.time()
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
-            lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
+            lr_sched.adjust_learning_rate(optimizer, data_iter_step/len(data_loader)+epoch, args)
 
         samples = samples.to(device, non_blocking=True)
-
         with torch.cuda.amp.autocast():
-            loss, _, _ = model(samples, mask_ratio=args.mask_ratio)
+            loss = model(samples, mask_ratio=args.mask_ratio)
 
         loss_value = loss.item()
-
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
             sys.exit(1)
 
         loss /= accum_iter
-        loss_scaler(loss, optimizer, parameters=model.parameters(),
-                    update_grad=(data_iter_step + 1) % accum_iter == 0)
-        if (data_iter_step + 1) % accum_iter == 0:
+        loss_scaler(loss, optimizer, parameters=model.parameters(), update_grad=(data_iter_step+1)%accum_iter==0)
+        if (data_iter_step+1) % accum_iter == 0:
             optimizer.zero_grad()
 
         torch.cuda.synchronize()
 
         metric_logger.update(loss=loss_value)
-
         lr = optimizer.param_groups[0]["lr"]
         metric_logger.update(lr=lr)
 
@@ -70,7 +69,7 @@ def train_one_epoch(model, data_loader, optimizer, device, epoch, loss_scaler, l
             """ We use epoch_1000x as the x-axis in tensorboard.
             This calibrates different curves when batch size changes.
             """
-            epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
+            epoch_1000x = int((data_iter_step/len(data_loader)+epoch)*1000)
             log_writer.add_scalar('train_loss', loss_value_reduce, epoch_1000x)
             log_writer.add_scalar('lr', lr, epoch_1000x)
 

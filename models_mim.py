@@ -304,6 +304,43 @@ class MaskedAutoencoderViT(nn.Module):
         return loss
 
 
+
+def extract_vit_backbone(ckpt, source: str='mae',prefix=None)->callable:
+    # prefix='encoder.layers
+    state_dict=ckpt
+    if prefix !=None:
+         for k in list(state_dict.keys()):
+            if k.startswith(f'{prefix}.'):
+                # print(k)
+                if not k.startswith(f'{prefix}.fc'):
+                    # remove prefix
+                    state_dict[k[len(f"{prefix}."):]] = state_dict[k]
+            # del掉不是backbone的部分
+            del state_dict[k]
+
+
+    if source == None:
+
+        for k in list(state_dict.keys()):
+            if k.startswith('head'):
+                del state_dict[k]
+        return state_dict
+    elif source=='mae':
+        for k in list(state_dict.keys()):
+            if k.startswith('patch_embed'):
+                state_dict[k.replace('projection','proj')]=state_dict[k]
+                del state_dict[k]
+            elif k.startswith('layers'):
+                layer_num=eval(k.split('.')[1])
+                new_key='blocks'+k[len("layers"):]
+                new_key=new_key.replace('.ln','.norm').replace('.ffn.layers.0.0.','.mlp.fc1.').replace('.ffn.layers.1','.mlp.fc2')
+                state_dict[new_key]=state_dict[k]
+                del state_dict[k]
+            elif k.startswith('ln1'):
+                state_dict[k.replace('ln1','norm')]=state_dict[k]
+                del state_dict[k]
+        return state_dict
+
 def MIM_vit_small_patch16(**kwargs):
     model = MaskedAutoencoderViT(
         patch_size=16,
@@ -329,6 +366,10 @@ def MIM_vit_base_patch16(**kwargs):
         decoder_num_heads=8,
         mlp_ratio=4,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    ckpt=torch.load('../preTrain/vit_base_p16_224_timm.pth')
+    ckpt_dict=extract_vit_backbone(ckpt,source=None)
+    model.load_state_dict(ckpt_dict,strict=False)
+    
     return model
 
 

@@ -16,7 +16,7 @@ import numpy as np
 import os
 import time
 from pathlib import Path
-
+from torch.utils.data import Dataset
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
@@ -25,7 +25,7 @@ import torchvision.datasets as datasets
 
 import timm
 import timm.optim.optim_factory as optim_factory
-
+from PIL import Image
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 import models_mim
@@ -34,6 +34,42 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
+class Reflacx(Dataset):
+    def __init__(self, data_root: str, transforms=None) -> None:
+        
+        self.data_root=data_root
+        self.info=json.load(open(os.path.join(self.data_root,"reflacx.json")))
+        self.gaze_dir=os.path.join(self.data_root,"attention")
+        self.transforms=transforms
+        # self.vis_trans=PairedTransform(transforms[0])
+        # self.val_trans=transforms[1]
+
+    def getImgPath(self,index):
+        image_path=self.info[index]['image_path']
+        image_path=os.path.join(self.data_root,image_path)
+        return image_path
+
+    def __getitem__(self, index):
+        image_path=self.info[index]['image_path']
+        study_id=self.info[index]['study_id']
+        reflacx_id=self.info[index]['reflacx_id']
+        image_path=os.path.join(self.data_root,image_path)
+        # gaze_path=os.path.join(self.gaze_dir,study_id,f"{reflacx_id}.png")
+
+        image = Image.open(image_path).convert('RGB')
+        # gaze=Image.open(gaze_path)
+        
+        if self.transforms !=None:
+            # image,gaze=self.transforms(image,gaze)
+            image=self.transforms(image)
+        return image
+        # return {"image":image}
+        # return {"image":image,"gaze":gaze}
+    
+
+    def __len__(self):
+        return len(self.info)
+
 def get_args():
     parser = argparse.ArgumentParser('MAE pre-training', add_help=False)
     parser.add_argument('--batch_size', default=128, type=int, help='Batch size per GPU (effective batch size is batch_size*accum_iter*ngpus')
@@ -41,7 +77,7 @@ def get_args():
     parser.add_argument('--accum_iter', default=1, type=int, help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='mae_vit_large_patch16', type=str, help='Name of model to train')
+    parser.add_argument('--model', default='MIM_vit_base_patch16', type=str, help='Name of model to train')
     parser.add_argument('--input_size', default=224, type=int, help='images input size')
     parser.add_argument('--mask_ratio', default=0.75, type=float, help='Masking ratio (percentage of removed patches).')
     parser.add_argument('--hog_nbins', default=9, type=int, help='nbins for HOG feature')
@@ -56,7 +92,7 @@ def get_args():
     parser.add_argument('--warmup_epochs', type=int, default=40, help='epochs to warmup LR')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='./dataset/ImageNet/train/', type=str, help='dataset path')
+    parser.add_argument('--data_path', default='../data/reflacx-1.0.0/', type=str, help='dataset path')
     parser.add_argument('--output_dir', default='./output/MAE_ViT_B', help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default=None, help='path where to tensorboard log')
     parser.add_argument('--device', default='cuda', help='device to use for training/testing')
@@ -97,7 +133,8 @@ def main(args):
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-    dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
+    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
+    dataset_train=Reflacx(args.data_path,transforms=transform_train)
     print(dataset_train)
     num_tasks = misc.get_world_size()
     global_rank = misc.get_rank()

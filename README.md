@@ -1,40 +1,46 @@
-## Masked Image Modeling with Local Multi-Scale Reconstruction
-PyTorch implementation of
-<br>
-[**Masked Image Modeling with Local Multi-Scale Reconstruction**](https://arxiv.org/pdf/2303.05251v1.pdf)
-<br>
-CVPR 2023 [Highlight](email.pdf) (Top 2.6%)
+## LocalMIM for ViT
+All our experiments can be implemented on a single node with 8 Tesla V100-32G GPUs.
 
-<p align="center">
-  <img src="model.png" width="1000">
-</p>
+### Data preparation
 
-Masked Image Modeling (MIM) achieves outstanding success in self-supervised representation learning. Unfortunately, MIM models typically have huge computational burden and slow learning process, which is an inevitable obstacle for their industrial applications. Although the lower layers play the key role in MIM, existing MIM models conduct reconstruction task only at the top layer of encoder. The lower layers are not explicitly guided and the interaction among their patches is only used for calculating new activations. Considering the reconstruction task requires non-trivial inter-patch interactions to reason target signals, we apply it to multiple local layers including lower and upper layers. Further, since the multiple layers expect to learn the information of different scales, we design local multi-scale reconstruction, where the lower and upper layers reconstruct fine-scale and coarse-scale supervision signals respectively. This design not only accelerates the representation learning process by explicitly guiding multiple layers, but also facilitates multi-scale semantical understanding to the input. Extensive experiments show that with significantly less pre-training burden, our model achieves comparable or better performance on classification, detection and segmentation tasks than existing MIM models.
+Download and extract ImageNet train and val images from http://image-net.org/.
+The directory structure is:
 
-### Pre-Trained Models
-
-| Backbone | #Params | Target | GPU Hours/Ep. | PT Epoch | PT Resolution |             PT log/ckpt              | Top-1 (%) |
-|:---------|:-------:|:------:|:-------------:|:--------:|:-------------:|:------------------------------------:|:---------:|
-| ViT-B    |   86M   |  HOG   |      0.7      |   1600   |    224x224    |      [log](https://github.com/Haoqing-Wang/LocalMIM/releases/download/pretrain/vit_base_localmim_hog_1600ep_pretrain.txt)/[ckpt](https://github.com/Haoqing-Wang/LocalMIM/releases/download/pretrain/vit_base_localmim_hog_1600ep_pretrain.pth)      |   84.0    |
-| ViT-L    |  307M   |  HOG   |      1.0      |   800    |    224x224    |      [log](https://github.com/Haoqing-Wang/LocalMIM/releases/download/pretrain/vit_large_localmim_hog_800ep_pretrain.txt)/[ckpt](https://github.com/Haoqing-Wang/LocalMIM/releases/download/pretrain/vit_large_localmim_hog_800ep_pretrain.pth)      |   85.8    |
-| Swin-B   |   88M   | Pixel  |      1.0      |   400    |    224x224    |      [log](https://github.com/Haoqing-Wang/LocalMIM/releases/download/pretrain/swin_base_localmim_pixel_400ep_pretrain.txt)/[ckpt](https://github.com/Haoqing-Wang/LocalMIM/releases/download/pretrain/swin_base_localmim_pixel_400ep_pretrain.pth)      |   84.0    |
-| Swin-B   |   88M   |  HOG   |      1.1      |   400    |    224x224    |      [log](https://github.com/Haoqing-Wang/LocalMIM/releases/download/pretrain/swin_base_localmim_hog_400ep_pretrain.txt)/[ckpt](https://github.com/Haoqing-Wang/LocalMIM/releases/download/pretrain/swin_base_localmim_hog_400ep_pretrain.pth)      |   84.1    |
-| Swin-L   |  197M   |  HOG   |      1.6      |   800    |    224x224    |      [log](https://github.com/Haoqing-Wang/LocalMIM/releases/download/pretrain/swin_large_localmim_hog_800ep_pretrain.txt)/[ckpt](https://github.com/Haoqing-Wang/LocalMIM/releases/download/pretrain/swin_large_localmim_hog_800ep_pretrain.pth)      |   85.6    |
-
-The pre-training and fine-tuning instruction can be found in [ViT](ViT/README.md), [Swin](Swin/README.md) and [semantic_segmentation](semantic_segmentation/README.md).
-
-### Citation
-If you find this project useful in your research, please consider cite:
 ```
-@inproceedings{wang2023masked,
-  title={Masked Image Modeling with Local Multi-Scale Reconstruction},
-  author={Wang, Haoqing and Tang, Yehui and Wang, Yunhe and Guo, Jianyuan and Deng, Zhi-Hong and Han, Kai},
-  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
-  pages={2122--2131},
-  year={2023}
-}
+│path/to/imagenet/
+├──train/
+│  ├── n01440764
+│  │   ├── n01440764_10026.JPEG
+│  │   ├── n01440764_10027.JPEG
+│  │   ├── ......
+│  ├── ......
+├──val/
+│  ├── n01440764
+│  │   ├── ILSVRC2012_val_00000293.JPEG
+│  │   ├── ILSVRC2012_val_00002138.JPEG
+│  │   ├── ......
+│  ├── ......
 ```
 
-### Acknowledgement
+### Pre-Training
+For 100-epoch pre-training, we set `warmup_epochs=10`.
+#### To pre-train ViT-B:
+```bash
+OMP_NUM_THREADS=1 python -m torch.distributed.launch --nproc_per_node=8 run_pretrain.py --batch_size 256 --model MIM_vit_base_patch16 --hog_nbins 9 --mask_ratio 0.75 --epochs 1600 --warmup_epochs 40 --blr 2e-4 --weight_decay 0.05 --data_path /path/to/imagenet/ --output_dir /output_dir/
+```
+#### To pre-train ViT-L:
+```bash
+OMP_NUM_THREADS=1 python -m torch.distributed.launch --nproc_per_node=8 run_pretrain.py --batch_size 128 --accum_iter 4 --model MIM_vit_large_patch16 --hog_nbins 18 --hog_bias --mask_ratio 0.75 --epochs 800 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --data_path /path/to/imagenet/ --output_dir /output_dir/
+```
 
-This code is built upon the implementation from [MAE](https://github.com/facebookresearch/mae), [GreenMIM](https://github.com/LayneH/GreenMIM), [MMSeg](https://github.com/open-mmlab/mmsegmentation) and [BEiT](https://github.com/microsoft/unilm/tree/master/beit).
+### Fine-tuning
+#### To fine-tune ViT-B:
+```bash
+OMP_NUM_THREADS=1 python -m torch.distributed.launch --nproc_per_node=8 run_finetune.py --batch_size 128 --model vit_base_patch16 --finetune /path/to/checkpoint.pth --epochs 100 --warmup_epochs 20 --lr 2e-3 --min_lr 1e-5 --layer_decay 0.65 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval --data_path /path/to/imagenet/ --output_dir /output_dir/
+```
+This is for 1600-epoch pre-trained model. For 100-epoch pre-trained model, we set `lr=4e-3`, `layer_decay=0.75` and `min_lr=1e-6`.
+
+#### To fine-tune ViT-L:
+```bash
+OMP_NUM_THREADS=1 python -m torch.distributed.launch --nproc_per_node=8 run_finetune.py --batch_size 64 --accum_iter 2 --model vit_large_patch16 --finetune /path/to/checkpoint.pth --epochs 50 --warmup_epochs 5 --lr 3e-3 --layer_decay 0.75 --weight_decay 0.05 --drop_path 0.2 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval --data_path /path/to/imagenet/ --output_dir /output_dir/
+```
